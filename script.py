@@ -14,16 +14,10 @@ from sklearn.cluster import KMeans, DBSCAN
 from sklearn.metrics import silhouette_score
 
 # Check if tensorflow/keras is installed, if not, warn the user
-try:
-    import tensorflow as tf
-    from tensorflow import keras
-    from keras import layers
-    TF_AVAILABLE = True
-except ImportError:
-    print("Warning: TensorFlow/Keras not installed. CNN-based classification will be disabled.")
-    print("Install with: pip install tensorflow")
-    TF_AVAILABLE = False
-
+import tensorflow as tf
+from tensorflow import keras
+from keras import layers
+TF_AVAILABLE = True
 # Check if ember is installed, if not, warn the user
 try:
     import ember

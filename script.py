@@ -15,7 +15,9 @@ from sklearn.metrics import silhouette_score
 
 # Check if tensorflow/keras is installed, if not, warn the user
 import tensorflow as tf
-from tensorflow import keras
+print('tester')
+import keras
+print('tester2')
 from keras import layers
 TF_AVAILABLE = True
 # Check if ember is installed, if not, warn the user

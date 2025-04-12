@@ -1,0 +1,15 @@
+# ember==0.0.1-dev
+keras==3.9.2
+# keras==2.9.0
+numpy
+pandas
+pefile==2024.8.26
+Pillow==11.1.0
+pyelftools==0.32
+Requests==2.32.3
+scikit_learn==1.6.1
+tensorflow==2.19.0
+#tensorflow==2.9.3
+#tensorflow_cpu==2.19.0
+lief>=0.11.0
+lightgbm>=3.2.0

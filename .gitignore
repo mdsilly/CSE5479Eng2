@@ -1,6 +1,9 @@
 # Ignore all CSV files
 *.csv
 
+#ignore malware files for now
+dataset/
+
 # Ignore all text files
 *.txt
 

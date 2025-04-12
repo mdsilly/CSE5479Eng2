@@ -1,0 +1,54 @@
+{
+  "malicious3": {
+    "search_completed": true,
+    "file_hashes": [
+      "1e8ed2a1de9da3023bb2804b5e7baacedb1056bf93710f0e1edc1697c5f8f38a",
+      "dc2d55de6e5316aeb72b22bf425e9eab82adbb48247f8f8bb8e8e4644ec191b0",
+      "af97c20ead714a7ffc48993c9655ea0fb2264f927fd5d66403d22877ef197495"
+    ],
+    "downloaded_hashes": [],
+    "completed": true
+  },
+  "malicious4": {
+    "search_completed": true,
+    "file_hashes": [
+      "4c7e4685059865bb7390e040d3c6c319769d9474e43456a127a5003ba16299d5",
+      "df7f74dd00e9c59afc6508d2e08f2604142a1113decf3361f8271d5dd72cfa9a",
+      "2f93e3b5226a88e1d0c335e3aa9bc23f79ee08fe9b402a9c4373c43cebc7da3f"
+    ],
+    "downloaded_hashes": [
+      "4c7e4685059865bb7390e040d3c6c319769d9474e43456a127a5003ba16299d5",
+      "df7f74dd00e9c59afc6508d2e08f2604142a1113decf3361f8271d5dd72cfa9a",
+      "2f93e3b5226a88e1d0c335e3aa9bc23f79ee08fe9b402a9c4373c43cebc7da3f"
+    ],
+    "completed": true
+  },
+  "malicious2": {
+    "search_completed": true,
+    "file_hashes": [
+      "4c7e4685059865bb7390e040d3c6c319769d9474e43456a127a5003ba16299d5",
+      "df7f74dd00e9c59afc6508d2e08f2604142a1113decf3361f8271d5dd72cfa9a",
+      "2f93e3b5226a88e1d0c335e3aa9bc23f79ee08fe9b402a9c4373c43cebc7da3f"
+    ],
+    "downloaded_hashes": [
+      "4c7e4685059865bb7390e040d3c6c319769d9474e43456a127a5003ba16299d5",
+      "df7f74dd00e9c59afc6508d2e08f2604142a1113decf3361f8271d5dd72cfa9a",
+      "2f93e3b5226a88e1d0c335e3aa9bc23f79ee08fe9b402a9c4373c43cebc7da3f"
+    ],
+    "completed": true
+  },
+  "malicious1": {
+    "search_completed": true,
+    "file_hashes": [
+      "1d6f032b3b79d1d71ee7350eca82d9e69a74265fd07344cc5f018edc14b5f3d2",
+      "9fba2c6f51319bc7585cd88948dfe4198a73a95d460d20f7c4ce54f892f84256",
+      "c20c165daba1edd97c116448a27b02442281d8b7e11ad714c6a1bef7cb8ce3d4"
+    ],
+    "downloaded_hashes": [
+      "1d6f032b3b79d1d71ee7350eca82d9e69a74265fd07344cc5f018edc14b5f3d2",
+      "9fba2c6f51319bc7585cd88948dfe4198a73a95d460d20f7c4ce54f892f84256",
+      "c20c165daba1edd97c116448a27b02442281d8b7e11ad714c6a1bef7cb8ce3d4"
+    ],
+    "completed": true
+  }
+}

@@ -1,0 +1,23 @@
+# Ignore all CSV files
+*.csv
+
+# Ignore all text files
+*.txt
+
+# Ignore all image files (training and validation)
+*.jpeg
+*.jpg
+*.png
+*.gif
+*.bmp
+*.tiff
+*.webp
+
+# Ignore ember features
+ember2018/
+emberFeatures/
+
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+*$py.class

@@ -1,0 +1,32 @@
+{
+  "benign": {
+    "search_completed": false,
+    "file_hashes": [],
+    "downloaded_hashes": [],
+    "completed": false
+  },
+  "malicious3": {
+    "search_completed": false,
+    "file_hashes": [],
+    "downloaded_hashes": [],
+    "completed": false
+  },
+  "malicious4": {
+    "search_completed": false,
+    "file_hashes": [],
+    "downloaded_hashes": [],
+    "completed": false
+  },
+  "malicious2": {
+    "search_completed": false,
+    "file_hashes": [],
+    "downloaded_hashes": [],
+    "completed": false
+  },
+  "malicious1": {
+    "search_completed": false,
+    "file_hashes": [],
+    "downloaded_hashes": [],
+    "completed": false
+  }
+}

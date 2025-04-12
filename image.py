@@ -1,46 +1,10 @@
 import sys
 import os
 import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+from keras import layers
 
-# Completely disable TensorFlow for now
-print("TensorFlow disabled due to compatibility issues")
-TF_AVAILABLE = False
-tf = None
-keras = None
-os.environ['TF_MIN_GPU_MULTIPROCESSOR_COUNT'] = '8'  # Disable GPU usage
-os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # Disable GPU usage
-print('yertttt')
-try:
-    from PIL import Image
-except ImportError as e:
-    print(f"Error importing PIL: {e}")
-    sys.exit(1)
-
-# Try to import TensorFlow with CPU-only support
-print('ggggeg')
-try:
-    # Use tensorflow-cpu if available
-    try:
-        print('frfrfrf')
-        import tensorflow as tf
-        print("Using tensorflow-cpu package")
-    except ImportError:
-        print('LOL')
-        import tensorflow as tf
-        print(f"Using standard tensorflow package (version {tf.__version__})")
-    
-    # Import keras and layers
-    from tensorflow_cpu import keras
-    from keras import layers
-    TF_AVAILABLE = True
-except ImportError as e:
-    print(f"ImportError: {e}")
-    print("Warning: TensorFlow/Keras not installed. CNN-based classification will be disabled.")
-    print("Install with: pip install tensorflow-cpu")
-    TF_AVAILABLE = False
-except Exception as e:
-    print(f"Error initializing TensorFlow: {e}")
-    TF_AVAILABLE = False
 
 # Import script module last to avoid circular imports
 print("Importing script module...")

@@ -1,8 +1,6 @@
 import os
-import sys
 import numpy as np
 import pandas as pd
-import csv
 import argparse
 import subprocess
 import time
@@ -14,7 +12,6 @@ from sklearn.preprocessing import normalize
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.metrics import silhouette_score
-from sklearn.model_selection import train_test_split
 
 # Check if tensorflow/keras is installed, if not, warn the user
 try:
@@ -45,25 +42,9 @@ except ImportError:
     print("Install with: pip install pefile")
     PEFILE_AVAILABLE = False
 
-# Check if pyelftools is installed, if not, warn the user
-try:
-    import elftools
-    from elftools.elf.elffile import ELFFile
-    ELFTOOLS_AVAILABLE = True
-except ImportError:
-    print("Warning: pyelftools not installed. ELF header analysis will be limited.")
-    print("Install with: pip install pyelftools")
-    ELFTOOLS_AVAILABLE = False
-
-# Check if requests is installed, if not, warn the user
-try:
-    import requests
-    REQUESTS_AVAILABLE = True
-except ImportError:
-    print("Warning: requests not installed. Online API lookups will be disabled.")
-    print("Install with: pip install requests")
-    REQUESTS_AVAILABLE = False
-
+import elftools
+from elftools.elf.elffile import ELFFile
+import requests
 # Directories
 DIR = "./dataset"
 IMG_TRAIN_DIR = "./images/train"
@@ -258,7 +239,6 @@ def extract_elf_features(file_path):
         features['entropy'] = calculate_entropy(data)
     
     # Use pyelftools for detailed ELF analysis if available
-    if ELFTOOLS_AVAILABLE:
         try:
             with open(file_path, 'rb') as f:
                 elf = ELFFile(f)
@@ -364,7 +344,7 @@ def extract_strings(file_path):
 
 def check_virustotal(file_hash):
     """Check a file hash against VirusTotal API"""
-    if not REQUESTS_AVAILABLE or not VIRUSTOTAL_API_KEY:
+    if not VIRUSTOTAL_API_KEY:
         return {"error": "VirusTotal API check not available"}
     
     try:
@@ -390,7 +370,7 @@ def check_virustotal(file_hash):
 
 def get_detailed_virustotal_info(file_hash):
     """Get detailed information about a file from VirusTotal API including malware family"""
-    if not REQUESTS_AVAILABLE or not VIRUSTOTAL_API_KEY:
+    if not VIRUSTOTAL_API_KEY:
         return {"error": "VirusTotal API check not available"}
     
     try:
@@ -444,7 +424,7 @@ def get_detailed_virustotal_info(file_hash):
 
 def search_virustotal_for_samples(query, limit=10):
     """Search VirusTotal for samples matching a query"""
-    if not REQUESTS_AVAILABLE or not VIRUSTOTAL_API_KEY:
+    if not VIRUSTOTAL_API_KEY:
         return {"error": "VirusTotal API check not available"}
     
     try:
@@ -481,7 +461,7 @@ def search_virustotal_for_samples(query, limit=10):
 
 def download_sample_from_virustotal(file_hash, destination_dir):
     """Download a specific sample from VirusTotal"""
-    if not REQUESTS_AVAILABLE or not VIRUSTOTAL_API_KEY:
+    if not VIRUSTOTAL_API_KEY:
         return {"error": "VirusTotal API check not available"}
     
     try:
@@ -537,7 +517,7 @@ def extract_all_features(file_path):
     file_hash = calculate_file_hash(file_path)
     features['file_hash'] = file_hash
     
-    if VIRUSTOTAL_API_KEY and REQUESTS_AVAILABLE:
+    if VIRUSTOTAL_API_KEY:
         vt_result = check_virustotal(file_hash)
         if 'found' in vt_result and vt_result['found']:
             features['vt_found'] = 1
@@ -1073,7 +1053,7 @@ def verify_clusters_with_virustotal(cluster_results, num_samples=3):
     """Verify cluster assignments using VirusTotal API"""
     print("Verifying clusters using VirusTotal API...")
     
-    if not REQUESTS_AVAILABLE or not VIRUSTOTAL_API_KEY:
+    if VIRUSTOTAL_API_KEY:
         print("Error: VirusTotal API check not available. Please provide a valid API key.")
         return None
     
@@ -1216,7 +1196,7 @@ def download_training_dataset(cluster_verification, samples_per_family=10):
     """Download a balanced training dataset based on identified families"""
     print("Downloading training dataset from VirusTotal...")
     
-    if not REQUESTS_AVAILABLE or not VIRUSTOTAL_API_KEY:
+    if not VIRUSTOTAL_API_KEY:
         print("Error: VirusTotal API check not available. Please provide a valid API key.")
         return False
     

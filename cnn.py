@@ -4,36 +4,9 @@ import numpy as np
 import pandas as pd
 import image
 import script
-
-# TensorFlow should already be configured in image.py
-# Just import it here with minimal configuration
-try:
-    # Use tensorflow-cpu if available (should be imported in image.py)
-    if hasattr(image, 'tf'):
-        tf = image.tf
-        keras = image.keras
-        layers = image.layers
-        TF_AVAILABLE = True
-    else:
-        # Fallback to direct import
-        try:
-            import tensorflow_cpu as tf
-            from tensorflow import keras
-            from keras import layers
-            TF_AVAILABLE = True
-        except ImportError:
-            import tensorflow as tf
-            from tensorflow import keras
-            from keras import layers
-            TF_AVAILABLE = True
-except ImportError as e:
-    print(f"ImportError in CNN: {e}")
-    print("Warning: TensorFlow/Keras not installed. CNN-based classification will be disabled.")
-    print("Install with: pip install tensorflow-cpu")
-    TF_AVAILABLE = False
-except Exception as e:
-    print(f"Error initializing TensorFlow in CNN module: {e}")
-    TF_AVAILABLE = False
+import tensorflow as tf
+from tensorflow import keras
+from keras import layers
 
 def train_cnn_model(epochs=10):
     """Train CNN model on image data"""

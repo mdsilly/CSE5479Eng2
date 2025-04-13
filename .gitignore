@@ -3,6 +3,7 @@
 
 #ignore malware files for now
 dataset/
+venv/
 
 # Ignore all text files
 *.txt

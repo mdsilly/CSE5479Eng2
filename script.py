@@ -1,9 +1,11 @@
 import os
+import warnings
 import numpy as np
 import pandas as pd
 import argparse
 import subprocess
 import time
+import sys
 from collections import Counter
 import hashlib
 import math
@@ -13,21 +15,30 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.metrics import silhouette_score
 
+warnings.filterwarnings('ignore') 
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '4' 
+
 # Check if tensorflow/keras is installed, if not, warn the user
-import tensorflow as tf
-print('tester')
-import keras
-print('tester2')
-from keras import layers
-TF_AVAILABLE = True
-# Check if ember is installed, if not, warn the user
+
+# mport tensorflow as tf
+# print('tester')
+# import keras
+#print('tester2')
+# from keras import layers
+TF_AVAILABLE = False
+
+# Check if LIEF is installed, if not, warn the user
 try:
-    import ember
-    EMBER_AVAILABLE = True
+    import lief
+    LIEF_AVAILABLE = True
 except ImportError:
-    print("Warning: EMBER not installed. PE feature extraction will be limited.")
-    print("Install with: pip install ember")
-    EMBER_AVAILABLE = False
+    print("Warning: LIEF not installed. Binary analysis will be limited.")
+    print("Install with: pip install lief")
+    LIEF_AVAILABLE = False
+
+# Check if ember is installed, if not, warn the user
+import ember
 
 # Check if pefile is installed, if not, warn the user
 try:
@@ -206,23 +217,46 @@ def extract_pe_features(file_path):
             features['number_of_exports'] = 0
     
     # Use EMBER for advanced PE features if available
-    if EMBER_AVAILABLE:
         try:
             feature_version = 2
-            extractor = ember.PEFeatureExtractor(feature_version)
+            # Set print_feature_warning to False to suppress LIEF version mismatch warnings
+            extractor = ember.PEFeatureExtractor(feature_version, print_feature_warning=False)
             with open(file_path, 'rb') as f:
                 file_data = f.read()
-            ember_features = np.array(extractor.feature_vector(file_data), dtype=np.float32)
-            # Add EMBER features to our feature dictionary
-            for i, val in enumerate(ember_features):
-                features[f'ember_{i}'] = val
+            
+            # Temporarily redirect stdout/stderr to suppress EMBER output
+            import sys
+            old_stdout = sys.stdout
+            old_stderr = sys.stderr
+            sys.stdout = open(os.devnull, 'w')
+            sys.stderr = open(os.devnull, 'w')
+            
+            try:
+                ember_features = np.array(extractor.feature_vector(file_data), dtype=np.float32)
+                
+                # Restore stdout/stderr
+                sys.stdout.close()
+                sys.stderr.close()
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
+                
+                # Add EMBER features to our feature dictionary
+                for i, val in enumerate(ember_features):
+                    features[f'ember_{i}'] = val
+            except Exception as e:
+                # Make sure stdout/stderr are restored even if an exception occurs
+                sys.stdout.close()
+                sys.stderr.close()
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
+                raise e
         except Exception as e:
             print(f"Error extracting EMBER features from {file_path}: {e}")
     
     return features
 
 def extract_elf_features(file_path):
-    """Extract features from ELF files"""
+    """Extract features from ELF files using LIEF"""
     features = {}
     
     # Basic file info
@@ -234,12 +268,104 @@ def extract_elf_features(file_path):
         data = f.read()
         features['entropy'] = calculate_entropy(data)
     
-    # Use pyelftools for detailed ELF analysis if available
+    # Use LIEF for detailed ELF analysis if available
+    lief.logging.disable()
+    if LIEF_AVAILABLE:
         try:
+            # Parse the ELF file with LIEF
             with open(file_path, 'rb') as f:
-                elf = ELFFile(f)
+                file_data = f.read()
+
+            
+            elf_binary = lief.ELF.parse(file_data)
+            
+            # Header information
+            features['elf_type'] = int(elf_binary.header.file_type)
+            features['machine_type'] = int(elf_binary.header.machine_type)
+            features['entry_point'] = elf_binary.header.entrypoint
+            features['object_file_version'] = int(elf_binary.header.object_file_version)
+            features['processor_flag'] = int(elf_binary.header.processor_flag)
+            
+            # Sections information
+            features['number_of_sections'] = len(elf_binary.sections)
+            
+            section_entropies = []
+            section_sizes = []
+            executable_sections = 0
+            
+            for section in elf_binary.sections:
+                section_data = section.content
+                if section_data:
+                    section_entropies.append(calculate_entropy(section_data))
+                    section_sizes.append(len(section_data))
                 
-                # Header information
+                # Check if section is executable
+                if section.has(lief.ELF.SECTION_FLAGS.EXECINSTR):
+                    executable_sections += 1
+            
+            features['avg_section_entropy'] = np.mean(section_entropies) if section_entropies else 0
+            features['max_section_entropy'] = max(section_entropies) if section_entropies else 0
+            features['avg_section_size'] = np.mean(section_sizes) if section_sizes else 0
+            features['executable_sections'] = executable_sections
+            
+            # Segments information
+            features['number_of_segments'] = len(elf_binary.segments)
+            
+            # Dynamic entries
+            if elf_binary.has_dynamic_entries:
+                features['number_of_dynamic_entries'] = len(elf_binary.dynamic_entries)
+                
+                # Count different types of dynamic entries
+                needed_libs = sum(1 for entry in elf_binary.dynamic_entries if entry.tag == lief.ELF.DYNAMIC_TAGS.NEEDED)
+                features['needed_libraries'] = needed_libs
+            else:
+                features['number_of_dynamic_entries'] = 0
+                features['needed_libraries'] = 0
+            
+            # Symbols
+            features['number_of_symbols'] = len(elf_binary.symbols)
+            features['number_of_dynamic_symbols'] = len(elf_binary.dynamic_symbols)
+            
+            # Relocations
+            features['number_of_relocations'] = len(elf_binary.relocations)
+            
+            # Create a feature vector similar to EMBER's approach
+            # This will ensure consistent feature extraction for ELF files
+            elf_feature_vector = np.array([
+                features['file_size'],
+                features['entropy'],
+                features['elf_type'],
+                features['machine_type'],
+                features['entry_point'],
+                features['object_file_version'],
+                features['processor_flag'],
+                features['number_of_sections'],
+                features['avg_section_entropy'],
+                features['max_section_entropy'],
+                features['avg_section_size'],
+                features['executable_sections'],
+                features['number_of_segments'],
+                features['number_of_dynamic_entries'],
+                features['needed_libraries'],
+                features['number_of_symbols'],
+                features['number_of_dynamic_symbols'],
+                features['number_of_relocations']
+            ], dtype=np.float32)
+            
+            # Add the feature vector components to our features dictionary
+            for i, val in enumerate(elf_feature_vector):
+                features[f'lief_elf_{i}'] = val
+                
+        except Exception as e:
+            print(f"Error analyzing ELF file with LIEF {file_path}: {e}")
+    
+    # Use pyelftools for detailed ELF analysis as a fallback
+    try:
+        with open(file_path, 'rb') as f:
+            elf = ELFFile(f)
+            
+            # Add any additional features not covered by LIEF
+            if 'elf_type' not in features:
                 features['elf_type'] = elf.header.e_type
                 features['machine_type'] = elf.header.e_machine
                 features['entry_point'] = elf.header.e_entry
@@ -279,9 +405,10 @@ def extract_elf_features(file_path):
                 # Program header information
                 features['number_of_segments'] = elf.num_segments()
                 
-        except Exception as e:
-            print(f"Error analyzing ELF file {file_path}: {e}")
-            # Set default values for all ELF-specific features
+    except Exception as e:
+        print(f"Error analyzing ELF file with pyelftools {file_path}: {e}")
+        # Set default values for all ELF-specific features if they don't exist
+        if 'elf_type' not in features:
             features['elf_type'] = 0
             features['machine_type'] = 0
             features['entry_point'] = 0
@@ -530,25 +657,6 @@ def extract_all_features(file_path):
 # CLASSIFICATION
 #######################
 
-def build_cnn_model():
-    """Build a CNN model for image-based classification"""
-    model = keras.Sequential([
-        layers.Input(shape=(IMG_SIZE, IMG_SIZE, 1)),  # Ensure consistent input image sizes
-        layers.Rescaling(1.0/255),
-        layers.Conv2D(32, (3, 3), activation='relu', input_shape=(IMG_SIZE, IMG_SIZE, 1)),
-        layers.MaxPooling2D((2, 2)),
-        layers.Conv2D(64, (3, 3), activation='relu'),
-        layers.MaxPooling2D((2, 2)),
-        layers.Conv2D(64, (3, 3), activation='relu'),
-        layers.MaxPooling2D((2, 2)),
-        layers.Flatten(),
-        layers.Dense(128, activation='relu'),
-        layers.Dropout(0.5),  # Increased dropout to prevent overfitting
-        layers.Dense(len(LABELS), activation='softmax')
-    ])
-    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-    return model
-
 def data_augmentation(images):
     """Apply data augmentation to images"""
     data_aug_layers = [
@@ -639,87 +747,6 @@ def generate_synthetic_samples(training_dir, samples_per_class=100):
                 create_greyscale_image(synthetic_file_path, label=label, file_name=synthetic_file_name, train=True)
     
     print("Synthetic sample generation complete.")
-
-def prepare_image_dataset():
-    """Prepare image dataset for CNN training"""
-    # Create image dataset from directory
-    training_dataset, val_dataset = keras.utils.image_dataset_from_directory(
-        IMG_TRAIN_DIR,
-        validation_split=0.2,
-        subset='both',
-        seed=42,
-        image_size=(IMG_SIZE, IMG_SIZE),
-        batch_size=BATCH_SIZE,
-        label_mode='categorical',
-        color_mode='grayscale'
-    )
-    
-    # Apply data augmentation
-    augmented_training_dataset = training_dataset.map(
-        lambda img, label: (data_augmentation(img), label)
-    )
-    
-    return augmented_training_dataset, val_dataset
-
-def train_cnn_model(epochs=10):
-    """Train CNN model on image data"""
-    print("Preparing image dataset...")
-    augmented_training_dataset, val_dataset = prepare_image_dataset()
-    
-    print("Building and training CNN model...")
-    model = build_cnn_model()
-    model.fit(
-        augmented_training_dataset, 
-        epochs=epochs, 
-        validation_data=val_dataset,
-        callbacks=[
-            keras.callbacks.EarlyStopping(patience=3, restore_best_weights=True)
-        ]
-    )
-    
-    # Save the model
-    model.save('malware_classifier.h5')
-    print("CNN model saved as 'malware_classifier.h5'")
-    
-    return model
-
-def classify_samples_cnn(model=None):
-    """Classify samples using CNN model"""
-    if model is None:
-        try:
-            model = keras.models.load_model('malware_classifier.h5')
-        except:
-            print("No model found. Please train the model first.")
-            return None
-    
-    results = []
-    for file in os.listdir(DIR):
-        file_path = os.path.join(DIR, file)
-        greyscale_img = create_greyscale_image(file_path, file_name=file, train=False)
-        img_array = keras.utils.img_to_array(greyscale_img)
-        img_array = img_array.reshape(1, IMG_SIZE, IMG_SIZE, 1)
-        
-        pred_probs = model.predict(img_array)
-        pred_label = np.argmax(pred_probs)
-        confidence = np.max(pred_probs)
-        
-        results.append({
-            'filename': file,
-            'label': INV_LABELS[pred_label],
-            'confidence': float(confidence)
-        })
-    
-    # Save results to CSV
-    df = pd.DataFrame(results)
-    df.to_csv("results/cnn_classification.csv", index=False)
-    
-    # Print summary
-    print("\n--- CNN Classification Results ---")
-    for label in LABELS.keys():
-        count = sum(1 for r in results if r['label'] == label)
-        print(f"{label}: {count} samples ({count/len(results)*100:.2f}%)")
-    
-    return results
 
 def classify_samples_static():
     """Classify samples using static analysis features"""
@@ -837,15 +864,21 @@ def combine_classifications(cnn_results, static_results):
 #######################
 
 def extract_clustering_features():
-    """Extract features for clustering"""
+    """Extract features for clustering, separating PE and ELF files"""
     print("Extracting features for clustering...")
     
-    features_list = []
-    filenames = []
+    # Separate lists for PE and ELF files
+    pe_features_list = []
+    elf_features_list = []
+    pe_filenames = []
+    elf_filenames = []
     
     for file in os.listdir(DIR):
         file_path = os.path.join(DIR, file)
         print(f"Analyzing {file} for clustering...")
+        
+        # Get file type
+        file_type = get_file_type(file_path)
         
         # Extract features
         features = extract_all_features(file_path)
@@ -858,20 +891,82 @@ def extract_clustering_features():
             if key not in exclude_keys and isinstance(value, (int, float)):
                 feature_vector.append(value)
         
-        features_list.append(feature_vector)
-        filenames.append(file)
+        # Add to appropriate list based on file type
+        if file_type == "PE":
+            pe_features_list.append(feature_vector)
+            pe_filenames.append(file)
+        elif file_type == "ELF":
+            elf_features_list.append(feature_vector)
+            elf_filenames.append(file)
     
-    # Convert to numpy array
-    X = np.array(features_list)
+    # Process PE files
+    pe_X_PCA = None
+    if pe_features_list:
+        print(f"Processing {len(pe_features_list)} PE files...")
+        
+        # Ensure all PE feature vectors have the same length
+        pe_features_dict_list = []
+        for i, feature_vector in enumerate(pe_features_list):
+            # Convert to dictionary with index as key
+            features_dict = {f"feature_{j}": val for j, val in enumerate(feature_vector)}
+            pe_features_dict_list.append(features_dict)
+        
+        # Get all unique feature keys
+        all_pe_keys = set()
+        for features_dict in pe_features_dict_list:
+            all_pe_keys.update(features_dict.keys())
+        
+        # Create consistent feature vectors
+        pe_features_list_uniform = []
+        for features_dict in pe_features_dict_list:
+            feature_vector = [features_dict.get(key, 0.0) for key in sorted(all_pe_keys)]
+            pe_features_list_uniform.append(feature_vector)
+        
+        # Convert to numpy array
+        pe_X = np.array(pe_features_list_uniform)
+        
+        # Normalize features
+        pe_X_normalized = normalize(pe_X, norm='l2')
+        
+        # Apply PCA for dimensionality reduction
+        pe_pca = PCA(n_components=min(10, pe_X.shape[1]))
+        pe_X_PCA = pe_pca.fit_transform(pe_X_normalized)
+        
     
-    # Normalize features
-    X_normalized = normalize(X, norm='l2')
-    
-    # Apply PCA for dimensionality reduction
-    pca = PCA(n_components=min(10, X.shape[1]))
-    X_pca = pca.fit_transform(X_normalized)
-    
-    return X_pca, filenames
+    # Process ELF files
+    elf_X_PCA = None
+    if elf_features_list:
+        print(f"Processing {len(elf_features_list)} ELF files...")
+        
+        # Ensure all ELF feature vectors have the same length
+        elf_features_dict_list = []
+        for i, feature_vector in enumerate(elf_features_list):
+            # Convert to dictionary with index as key
+            features_dict = {f"feature_{j}": val for j, val in enumerate(feature_vector)}
+            elf_features_dict_list.append(features_dict)
+        
+        # Get all unique feature keys
+        all_elf_keys = set()
+        for features_dict in elf_features_dict_list:
+            all_elf_keys.update(features_dict.keys())
+        
+        # Create consistent feature vectors
+        elf_features_list_uniform = []
+        for features_dict in elf_features_dict_list:
+            feature_vector = [features_dict.get(key, 0.0) for key in sorted(all_elf_keys)]
+            elf_features_list_uniform.append(feature_vector)
+        
+        # Convert to numpy array
+        elf_X = np.array(elf_features_list_uniform)
+        
+        # Normalize features
+        elf_X_normalized = normalize(elf_X, norm='l2')
+        
+        # Apply PCA for dimensionality reduction
+        elf_pca = PCA(n_components=min(10, elf_X.shape[1]))
+        elf_X_PCA = elf_pca.fit_transform(elf_X_normalized)
+        
+    return pe_X_PCA, pe_filenames, elf_X_PCA, elf_filenames
 
 def analyze_clusters(X, filenames, cluster_results, original_features=None):
     """Analyze clustering results in detail"""
@@ -949,17 +1044,33 @@ def analyze_clusters(X, filenames, cluster_results, original_features=None):
     
     return cluster_stats
 
-def perform_kmeans_clustering(X, filenames, n_clusters=5, analyze=True):
+def perform_kmeans_clustering(X, filenames, n_clusters=3, analyze=True, elf = False):
     """Perform K-means clustering"""
     print(f"Performing K-means clustering with {n_clusters} clusters...")
+    
+    # Ensure we don't try to create more clusters than samples
+    n_clusters = min(n_clusters, len(filenames))
+    
+    # If only one sample, just return it as its own cluster
+    if len(filenames) == 1:
+        results = [{'filename': filenames[0], 'cluster': 0}]
+        print("Only one sample, returning as its own cluster.")
+        return results
+    
+    # If we have very few samples, adjust the number of clusters
+    if len(filenames) < 3:
+        n_clusters = 1
     
     kmeans = KMeans(n_clusters=n_clusters, n_init=10, random_state=42)
     cluster_labels = kmeans.fit_predict(X)
     
-    # Calculate silhouette score
-    if len(set(cluster_labels)) > 1:  # Need at least 2 clusters for silhouette score
-        silhouette = silhouette_score(X, cluster_labels)
-        print(f"K-means silhouette score: {silhouette:.4f}")
+    # Calculate silhouette score if we have at least 2 clusters and more than 2 samples
+    if len(set(cluster_labels)) > 1 and len(filenames) > 2:
+        try:
+            silhouette = silhouette_score(X, cluster_labels)
+            print(f"K-means silhouette score: {silhouette:.4f}")
+        except Exception as e:
+            print(f"Could not calculate silhouette score: {e}")
     
     # Create results
     results = []
@@ -969,34 +1080,39 @@ def perform_kmeans_clustering(X, filenames, n_clusters=5, analyze=True):
             'cluster': int(cluster_labels[i])
         })
     
+    # Generate a unique filename based on file type
+    file_type = "elf"
+    if not elf:
+        file_type = "pe"
+    
     # Save results to CSV
     df = pd.DataFrame(results)
-    df.to_csv("results/kmeans_clustering.csv", index=False)
+    df.to_csv(f"results/kmeans_clustering_{file_type}.csv", index=False)
     
     # Print summary
-    print("\n--- K-means Clustering Results ---")
+    print(f"\n--- K-means Clustering Results ({file_type}) ---")
     cluster_counts = Counter(cluster_labels)
     for cluster, count in sorted(cluster_counts.items()):
         print(f"Cluster {cluster}: {count} samples ({count/len(cluster_labels)*100:.2f}%)")
     
     # Analyze clusters if requested
-    if analyze:
+    if analyze and len(filenames) > 1:
         cluster_stats = analyze_clusters(X, filenames, results)
     
     return results
 
-def perform_dbscan_clustering(X, filenames):
+def perform_dbscan_clustering(X, filenames, elf = False):
     """Perform DBSCAN clustering with parameter optimization"""
     print("Performing DBSCAN clustering with parameter optimization...")
     
     # Try different eps values to find the best one
-    eps_values = np.linspace(0.00002, 0.007, 2500)
+    eps_values = np.linspace(0.000001, 0.5, 5500)
     best_eps = None
     best_score = -1
     best_labels = None
     
     for eps in eps_values:
-        dbscan = DBSCAN(eps=eps, min_samples=3)
+        dbscan = DBSCAN(eps=eps, min_samples=5)
         labels = dbscan.fit_predict(X)
         
         # Skip if all samples are noise (-1) or all in one cluster
@@ -1030,11 +1146,14 @@ def perform_dbscan_clustering(X, filenames):
         })
     
     # Save results to CSV
+    file_type = 'elf'
+    if not elf:
+        file_type = 'pe'
     df = pd.DataFrame(results)
-    df.to_csv("results/dbscan_clustering.csv", index=False)
+    df.to_csv(f"results/dbscan_clustering_{file_type}.csv", index=False)
     
     # Print summary
-    print("\n--- DBSCAN Clustering Results ---")
+    print(f"\n--- DBSCAN Clustering Results {file_type}---")
     cluster_counts = Counter(best_labels)
     for cluster, count in sorted(cluster_counts.items()):
         print(f"Cluster {cluster}: {count} samples ({count/len(best_labels)*100:.2f}%)")
@@ -1053,20 +1172,32 @@ def verify_clusters_with_virustotal(cluster_results, num_samples=3):
         print("Error: VirusTotal API check not available. Please provide a valid API key.")
         return None
     
-    # Group files by cluster
-    clusters = {}
+    # Group files by cluster and file type
+    pe_clusters = {}
+    elf_clusters = {}
+    
     for result in cluster_results:
         cluster = result['cluster']
         filename = result['filename']
+        file_type = result.get('file_type', 'unknown')
         
-        if cluster not in clusters:
-            clusters[cluster] = []
-        
-        clusters[cluster].append(filename)
+        if file_type == 'PE':
+            if cluster not in pe_clusters:
+                pe_clusters[cluster] = []
+            pe_clusters[cluster].append(filename)
+        elif file_type == 'ELF':
+            if cluster not in elf_clusters:
+                elf_clusters[cluster] = []
+            elf_clusters[cluster].append(filename)
+        else:
+            # For backward compatibility with old format
+            if cluster not in pe_clusters:
+                pe_clusters[cluster] = []
+            pe_clusters[cluster].append(filename)
     
-    # Analyze representative samples from each cluster
-    cluster_info = {}
-    for cluster, files in clusters.items():
+    # Process PE clusters
+    pe_cluster_info = {}
+    for cluster, files in pe_clusters.items():
         print(f"Analyzing cluster {cluster} with {len(files)} samples...")
         
         # Select representative samples (or use all if fewer than num_samples)
@@ -1111,7 +1242,63 @@ def verify_clusters_with_virustotal(cluster_results, num_samples=3):
         common_file_type = file_type_counter.most_common(1)
         
         # Store cluster information
-        cluster_info[cluster] = {
+        pe_cluster_info[cluster] = {
+            'size': len(files),
+            'common_families': common_families,
+            'common_tags': common_tags,
+            'common_file_type': common_file_type[0][0] if common_file_type else "unknown",
+            'is_benign': any('benign' in tag.lower() for tag in tags_list) or 
+                        any('clean' in family.lower() for family in family_candidates)
+        }
+    
+    # Process ELF clusters
+    elf_cluster_info = {}
+    for cluster, files in elf_clusters.items():
+        print(f"Analyzing ELF cluster {cluster} with {len(files)} samples...")
+        
+        # Select representative samples (or use all if fewer than num_samples)
+        sample_files = files[:min(num_samples, len(files))]
+        
+        # Get detailed VT info for each sample
+        family_candidates = []
+        tags_list = []
+        file_types = []
+        
+        for file in sample_files:
+            file_path = os.path.join(DIR, file)
+            file_hash = calculate_file_hash(file_path)
+            
+            print(f"  Checking {file} ({file_hash}) on VirusTotal...")
+            vt_info = get_detailed_virustotal_info(file_hash)
+            
+            if 'found' in vt_info and vt_info['found']:
+                # Add family candidates
+                if 'family_candidates' in vt_info:
+                    family_candidates.extend([fc[0] for fc in vt_info['family_candidates']])
+                
+                # Add tags
+                if 'tags' in vt_info:
+                    tags_list.extend(vt_info['tags'])
+                
+                # Add file type
+                if 'file_type' in vt_info:
+                    file_types.append(vt_info['file_type'])
+            
+            # Sleep to respect API rate limits
+            time.sleep(2)
+        
+        # Count occurrences
+        family_counter = Counter(family_candidates)
+        tags_counter = Counter(tags_list)
+        file_type_counter = Counter(file_types)
+        
+        # Get the most common values
+        common_families = family_counter.most_common(3)
+        common_tags = tags_counter.most_common(5)
+        common_file_type = file_type_counter.most_common(1)
+        
+        # Store cluster information
+        elf_cluster_info[cluster] = {
             'size': len(files),
             'common_families': common_families,
             'common_tags': common_tags,
@@ -1123,37 +1310,66 @@ def verify_clusters_with_virustotal(cluster_results, num_samples=3):
     # Determine cluster labels based on VT info
     cluster_labels = {}
     
-    # First, identify the benign cluster
-    benign_candidates = []
-    for cluster, info in cluster_info.items():
+    # First, identify the benign clusters for each file type
+    pe_benign_candidates = []
+    for cluster, info in pe_cluster_info.items():
         if info['is_benign']:
-            benign_candidates.append((cluster, info['size']))
+            pe_benign_candidates.append((cluster, info['size']))
     
-    # If we found benign candidates, use the largest one as benign
-    if benign_candidates:
-        benign_cluster = max(benign_candidates, key=lambda x: x[1])[0]
-        cluster_labels[benign_cluster] = "benign"
-    else:
+    elf_benign_candidates = []
+    for cluster, info in elf_cluster_info.items():
+        if info['is_benign']:
+            elf_benign_candidates.append((cluster, info['size']))
+    
+    # If we found benign candidates for PE files, use the largest one as benign
+    if pe_benign_candidates:
+        pe_benign_cluster = max(pe_benign_candidates, key=lambda x: x[1])[0]
+        cluster_labels[pe_benign_cluster] = "benign_pe"
+    elif pe_clusters:
         # If no clear benign cluster, use the one with lowest detection rate
         # This is a fallback and might not be accurate
-        benign_cluster = min(cluster_info.keys(), key=lambda c: len(cluster_info[c]['common_families']))
-        cluster_labels[benign_cluster] = "benign"
+        pe_benign_cluster = min(pe_cluster_info.keys(), key=lambda c: len(pe_cluster_info[c].get('common_families', [])))
+        cluster_labels[pe_benign_cluster] = "benign_pe"
     
-    # Assign labels to malicious clusters
-    malware_idx = 1
-    for cluster in sorted(cluster_info.keys()):
+    # If we found benign candidates for ELF files, use the largest one as benign
+    if elf_benign_candidates:
+        elf_benign_cluster = max(elf_benign_candidates, key=lambda x: x[1])[0]
+        cluster_labels[elf_benign_cluster] = "benign_elf"
+    elif elf_clusters:
+        # If no clear benign cluster, use the one with lowest detection rate
+        # This is a fallback and might not be accurate
+        elf_benign_cluster = min(elf_cluster_info.keys(), key=lambda c: len(elf_cluster_info[c].get('common_families', [])))
+        cluster_labels[elf_benign_cluster] = "benign_elf"
+    
+    # Assign labels to malicious PE clusters
+    pe_malware_idx = 1
+    for cluster in sorted(pe_cluster_info.keys()):
         if cluster not in cluster_labels:
-            cluster_labels[cluster] = f"malicious{malware_idx}"
-            malware_idx += 1
+            cluster_labels[cluster] = f"pe_malicious{pe_malware_idx}"
+            pe_malware_idx += 1
+    
+    # Assign labels to malicious ELF clusters
+    elf_malware_idx = 1
+    for cluster in sorted(elf_cluster_info.keys()):
+        if cluster not in cluster_labels:
+            cluster_labels[cluster] = f"elf_malicious{elf_malware_idx}"
+            elf_malware_idx += 1
     
     # Save results to CSV
     results = []
     for result in cluster_results:
         cluster = result['cluster']
         filename = result['filename']
+        file_type = result.get('file_type', 'unknown')
         
-        # Get cluster info
-        info = cluster_info.get(cluster, {})
+        # Get cluster info based on file type
+        if file_type == 'PE' or (file_type == 'unknown' and cluster in pe_cluster_info):
+            info = pe_cluster_info.get(cluster, {})
+        elif file_type == 'ELF':
+            info = elf_cluster_info.get(cluster, {})
+        else:
+            info = {}
+            
         common_families = info.get('common_families', [])
         common_tags = info.get('common_tags', [])
         
@@ -1171,7 +1387,14 @@ def verify_clusters_with_virustotal(cluster_results, num_samples=3):
     # Print summary
     print("\n--- Cluster Verification Results ---")
     for cluster, label in sorted(cluster_labels.items()):
-        info = cluster_info[cluster]
+        # Determine which info dictionary to use based on the cluster
+        if cluster in pe_cluster_info:
+            info = pe_cluster_info[cluster]
+        elif cluster in elf_cluster_info:
+            info = elf_cluster_info[cluster]
+        else:
+            continue
+            
         print(f"Cluster {cluster} -> {label}")
         print(f"  Size: {info['size']} samples")
         print(f"  Common families: {', '.join([f'{family}({count})' for family, count in info['common_families']])}")
@@ -1179,9 +1402,14 @@ def verify_clusters_with_virustotal(cluster_results, num_samples=3):
         print(f"  Common file type: {info['common_file_type']}")
         print()
     
+    # Combine cluster info for the return value
+    combined_cluster_info = {}
+    combined_cluster_info.update(pe_cluster_info)
+    combined_cluster_info.update(elf_cluster_info)
+    
     return {
         'cluster_labels': cluster_labels,
-        'cluster_info': cluster_info
+        'cluster_info': combined_cluster_info
     }
 
 #######################
@@ -1290,7 +1518,7 @@ def prepare_training_dataset():
 # COMPLETE WORKFLOW
 #######################
 
-def run_complete_workflow(n_clusters=5, samples_per_family=10):
+def run_complete_workflow(n_elf_clusters = 3, n_pe_clusters = 3, samples_per_family=10):
     """Run the complete workflow from clustering to training dataset creation"""
     print("Running complete malware analysis workflow...")
     
@@ -1298,11 +1526,15 @@ def run_complete_workflow(n_clusters=5, samples_per_family=10):
     init_directories()
     
     # Step 2: Extract features and perform clustering
-    X, filenames = extract_clustering_features()
-    clustering_results = perform_kmeans_clustering(X, filenames, n_clusters=n_clusters)
+    X_pe, filenames_pe, X_elf, filenames_elf = extract_clustering_features()
+    clustering_results_pe = perform_kmeans_clustering(X_pe, filenames_pe, n_clusters=n_pe_clusters)
+    clustering_results_elf = perform_kmeans_clustering(X_elf, filenames_elf, n_clusters=n_elf_clusters, elf = True)
     
     # Step 3: Analyze clusters
-    cluster_stats = analyze_clusters(X, filenames, clustering_results)
+    cluster_stats_pe = analyze_clusters(X_pe, filenames_pe, clustering_results_pe)
+    cluster_stats_elf = analyze_clusters(X_elf, filenames_elf, clustering_results_elf)
+
+    clustering_results = clustering_results_pe + clustering_results_elf
     
     # Step 4: Verify clusters with VirusTotal
     cluster_verification = verify_clusters_with_virustotal(clustering_results)
@@ -1432,8 +1664,11 @@ def main():
     parser.add_argument("--cluster", action="store_true", help="Perform clustering")
     parser.add_argument("--kmeans", action="store_true", help="Use K-means clustering")
     parser.add_argument("--dbscan", action="store_true", help="Use DBSCAN clustering")
-    parser.add_argument("--n-clusters", type=int, default=5, help="Number of clusters for K-means")
+    parser.add_argument("--n-clusters", type=int, default=5, help="Number of clusters for K-means (deprecated, use --pe-clusters and --elf-clusters instead)")
+    parser.add_argument("--pe-clusters", type=int, default=5, help="Number of clusters for PE files")
+    parser.add_argument("--elf-clusters", type=int, default=5, help="Number of clusters for ELF files")
     parser.add_argument("--analyze-clusters", action="store_true", help="Analyze clustering results in detail")
+    parser.add_argument("--combine-benign", action="store_true", help="Combine benign classes from different file types in final report")
     
     # VirusTotal integration options
     parser.add_argument("--verify-clusters", action="store_true", help="Verify clusters using VirusTotal API")
@@ -1462,7 +1697,7 @@ def main():
     
     # Run complete workflow if requested
     if args.run_workflow:
-        run_complete_workflow(n_clusters=args.n_clusters, samples_per_family=args.samples_per_family)
+        run_complete_workflow(n_pe_clusters = args.pe_clusters, n_elf_clusters = args.elf_clusters, samples_per_family=args.samples_per_family)
         return
     
     # Initialize directories if requested
@@ -1509,45 +1744,35 @@ def main():
     # Clustering
     clustering_results = None
     
-    if args.cluster:
-        X, filenames = extract_clustering_features()
+    if args.kmeans or args.dbscan:
+        X_pe, filenames_pe, X_elf, filenames_elf = extract_clustering_features()
         
         if args.kmeans:
-            clustering_results = perform_kmeans_clustering(X, filenames, n_clusters=args.n_clusters, analyze=args.analyze_clusters)
-        
+            clustering_results_pe = perform_kmeans_clustering(X_pe, filenames_pe, n_clusters=args.pe_clusters, analyze=args.analyze_clusters)
+            clustering_results_elf = perform_kmeans_clustering(X_elf, filenames_elf, n_clusters=args.elf_clusters, analyze=args.analyze_clusters, elf = True)
         if args.dbscan:
-            clustering_results = perform_dbscan_clustering(X, filenames)
-            
+            dbscan_results_pe = perform_dbscan_clustering(X_pe, filenames_pe)
+            dbscan_results_elf = perform_dbscan_clustering(X_elf, filenames_elf, elf = True)
+        
+        clustering_results = clustering_results_pe + clustering_results_elf
+
             # Analyze DBSCAN clusters if requested
-            if args.analyze_clusters and clustering_results:
-                analyze_clusters(X, filenames, clustering_results)
+        if args.analyze_clusters and clustering_results:
+            analyze_clusters(X_pe, filenames_pe, clustering_results_pe)
+            analyze_clusters(X_elf, filenames_elf, clustering_results_elf)
     
     # Verify clusters with VirusTotal if requested
-    cluster_verification = None
-    if args.verify_clusters:
-        if clustering_results is None and args.cluster:
-            X, filenames = extract_clustering_features()
-            clustering_results = perform_kmeans_clustering(X, filenames, n_clusters=args.n_clusters)
-        
-        if clustering_results:
-            cluster_verification = verify_clusters_with_virustotal(clustering_results)
-        else:
-            print("Error: Clustering results required for cluster verification.")
-    
-    # Download training dataset if requested
-    if args.download_training:
-        if cluster_verification is None and args.verify_clusters:
-            if clustering_results is None and args.cluster:
-                X, filenames = extract_clustering_features()
-                clustering_results = perform_kmeans_clustering(X, filenames, n_clusters=args.n_clusters)
-            
+        cluster_verification = None
+        if args.verify_clusters:
             if clustering_results:
-                cluster_verification = verify_clusters_with_virustotal(clustering_results)
-        
-        if cluster_verification:
+                cluster_verification = verify_clusters_with_virustotal(clustering_results_pe, clustering_results_elf)
+            else:
+                print("Error: Clustering results required for cluster verification.")
+
+    if cluster_verification and args.download_training:
             download_training_dataset(cluster_verification, samples_per_family=args.samples_per_family)
-        else:
-            print("Error: Cluster verification required for downloading training dataset.")
+    else:
+        print("Error: Cluster verification required for downloading training dataset.")
     
     # Prepare training dataset if requested
     if args.prepare_training:
@@ -1555,9 +1780,10 @@ def main():
     
     # Generate YARA rules if requested
     if args.generate_yara:
-        if clustering_results is None and args.cluster:
-            X, filenames = extract_clustering_features()
-            clustering_results = perform_kmeans_clustering(X, filenames, n_clusters=args.n_clusters)
+        if clustering_results is None and args.kmeans:
+            X_pe, filenames_pe, X_elf, filenames_elf = extract_clustering_features()
+            clustering_results_pe = perform_kmeans_clustering(X_pe, filenames_pe, n_clusters=args.pe_clusters)
+            clustering_results_elf = perform_kmeans_clustering(X_elf, filenames_elf, n_clusters=args.elf_clusters, elf = True)
         
         if clustering_results:
             generate_yara_rules(clustering_results)

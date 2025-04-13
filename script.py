@@ -55,7 +55,7 @@ import requests
 # Directories
 DIR = "./dataset"
 IMG_TRAIN_DIR = "./images/train"
-IMG_VAL_DIR = "./images/validate"
+IMG_VAL_DIR = "./images/eng2"
 IMG_SIZE = 128
 BATCH_SIZE = 16
 
@@ -139,10 +139,13 @@ def create_greyscale_image(file_path, label=None, file_name=None, train=True):
     img = Image.fromarray(img_array, mode='L')
     
     # Save the image if needed
+    print(img)
     if file_name:
+        print('test1')
         if train and label:
             img.save(os.path.join(IMG_TRAIN_DIR, label, file_name[:9] + '.jpg'))
         elif not train:
+            print('test2')
             img.save(os.path.join(IMG_VAL_DIR, file_name[:9] + '.jpg'))
     
     return np.array(img)
@@ -1714,7 +1717,7 @@ def main():
         print(f"Creating grayscale images with label '{args.label}'...")
         for file in os.listdir(DIR):
             file_path = os.path.join(DIR, file)
-            create_greyscale_image(file_path, label=args.label, file_name=file, train=True)
+            create_greyscale_image(file_path, label=args.label, file_name=file, train=False)
         
         print("Grayscale images created.")
     
@@ -1743,6 +1746,7 @@ def main():
     
     # Clustering
     clustering_results = None
+    cluster_verification = None
     
     if args.kmeans or args.dbscan:
         X_pe, filenames_pe, X_elf, filenames_elf = extract_clustering_features()

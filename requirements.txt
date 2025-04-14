@@ -8,7 +8,7 @@ Pillow
 pyelftools==0.32
 Requests==2.32.3
 scikit_learn
-tensorflow
+#tensorflow==2.11.0
 #tensorflow==2.9.3
 #tensorflow_cpu==2.19.0
 lief>=0.11.0

@@ -4,6 +4,8 @@
 #ignore malware files for now
 dataset/
 venv/
+training_data/
+balanced_training_data/
 
 # Ignore all text files
 *.txt

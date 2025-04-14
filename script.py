@@ -21,12 +21,11 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '4'
 
 # Check if tensorflow/keras is installed, if not, warn the user
 
-# mport tensorflow as tf
-# print('tester')
-# import keras
-#print('tester2')
-# from keras import layers
-TF_AVAILABLE = False
+import tensorflow as tf
+import keras
+
+from keras import layers
+TF_AVAILABLE = True
 
 # Check if LIEF is installed, if not, warn the user
 try:
@@ -55,7 +54,7 @@ import requests
 # Directories
 DIR = "./dataset"
 IMG_TRAIN_DIR = "./images/train"
-IMG_VAL_DIR = "./images/eng2"
+IMG_VAL_DIR = "./images/eng_final"
 IMG_SIZE = 128
 BATCH_SIZE = 16
 
@@ -1517,6 +1516,42 @@ def prepare_training_dataset():
     print("Training dataset preparation complete.")
     return True
 
+def generate_validation_images(validation_dir="../eng_final_data", img_val_dir=IMG_VAL_DIR):
+    """Generate grayscale images for all validation samples"""
+    print(f"Generating images for validation samples from {validation_dir}...")
+    
+    # Create output directory if it doesn't exist
+    os.makedirs(img_val_dir, exist_ok=True)
+    
+    # Get list of files
+    files = [f for f in os.listdir(validation_dir) if os.path.isfile(os.path.join(validation_dir, f))]
+    total_files = len(files)
+    
+    print(f"Found {total_files} files to process")
+    
+    # Process each file
+    for i, file_name in enumerate(files):
+        file_path = os.path.join(validation_dir, file_name)
+        
+        # Skip very small files (likely not valid binaries)
+        if os.path.getsize(file_path) < 10:
+            print(f"Skipping {file_name} (too small)")
+            continue
+        
+        # Generate image
+        try:
+            create_greyscale_image(file_path, file_name=file_name, train=False)
+            
+            # Print progress
+            if (i + 1) % 10 == 0 or i == 0 or i == total_files - 1:
+                print(f"Processed {i+1}/{total_files} files ({(i+1)/total_files*100:.2f}%)")
+        
+        except Exception as e:
+            print(f"Error processing {file_name}: {e}")
+    
+    print(f"Image generation complete. Images saved to {img_val_dir}")
+    return True
+
 #######################
 # COMPLETE WORKFLOW
 #######################
@@ -1682,6 +1717,10 @@ def main():
     # YARA options
     parser.add_argument("--generate-yara", action="store_true", help="Generate YARA rules")
     
+    # Image generation options
+    parser.add_argument("--generate-validation-images", action="store_true", help="Generate grayscale images for validation samples")
+    parser.add_argument("--validation-dir", type=str, default="../eng_final_data", help="Directory containing validation samples")
+    
     # API options
     parser.add_argument("--vt-api-key", type=str, help="VirusTotal API key")
     
@@ -1793,6 +1832,10 @@ def main():
             generate_yara_rules(clustering_results)
         else:
             print("Error: Clustering results required for YARA rule generation.")
+    
+    # Generate validation images if requested
+    if args.generate_validation_images:
+        generate_validation_images(validation_dir=args.validation_dir)
     
     print("All tasks completed.")
 

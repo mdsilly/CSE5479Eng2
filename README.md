@@ -1,147 +1,113 @@
-# Malware Classification and Clustering Tool
+# Malware Sample Downloader
 
-This tool provides a comprehensive approach to malware classification and clustering, combining multiple techniques:
+This script downloads malware samples from MalwareBazaar and Hybrid Analysis, and can generate synthetic samples if needed. It's designed to download approximately 200 samples for each of these malware family/extension combinations:
 
-1. Image-based classification using CNN
-2. Static analysis of file headers, entropy, and strings
-3. Clustering using KMeans and DBSCAN
-4. YARA rule generation for identified malware families
+- ELF: Miner (CoinMiner/BitCoin)
+- ELF: Berbew
+- EXE: Loader
+- EXE: Dacic (Darkcloud)
+
+## Features
+
+- Downloads samples from MalwareBazaar
+- Downloads samples from Hybrid Analysis (requires API key)
+- Avoids downloading duplicates of files that already exist in eng_final_data directory
+- Generates synthetic samples when not enough real samples are available
+- Tracks progress to allow resuming interrupted downloads
+- Organizes samples into appropriate directories
+- Handles ZIP extraction for MalwareBazaar samples
+- Implements error handling with 60-second retries for API errors
 
 ## Requirements
 
-The script will check for these dependencies and warn if they're missing:
+The script requires the following Python packages:
+- requests
+- zipfile
+- hashlib
+- argparse
+- json
+- random
 
-- Python 3.6+
-- TensorFlow/Keras
-- scikit-learn
-- numpy, pandas
-- PIL (Pillow)
-- pefile (for PE file analysis)
-- pyelftools (for ELF file analysis)
-- requests (for VirusTotal API)
-- ember (for advanced PE feature extraction)
+These are already included in the requirements.txt file.
 
-## Command-Line Arguments
+## Usage
 
-The script supports modular execution through command-line arguments, allowing you to run specific parts of the analysis pipeline independently.
+### Basic Usage
 
-### General Options
-
-```
---init                Initialize necessary directories
-```
-
-### Dataset Processing
-
-```
---create-images       Create grayscale images from binaries
---label LABEL         Label for training images (required with --create-images)
-```
-
-### Classification Options
-
-```
---train-cnn           Train CNN model on image data
---epochs EPOCHS       Number of epochs for CNN training (default: 10)
---classify-cnn        Classify samples using CNN
---classify-static     Classify samples using static analysis
---classify-combined   Classify samples using combined approach
-```
-
-### Clustering Options
-
-```
---cluster             Perform clustering (required for --kmeans or --dbscan)
---kmeans              Use K-means clustering
---dbscan              Use DBSCAN clustering
---n-clusters N        Number of clusters for K-means (default: 5)
-```
-
-### YARA Options
-
-```
---generate-yara       Generate YARA rules for identified clusters
-```
-
-### API Options
-
-```
---vt-api-key KEY      VirusTotal API key for hash lookups
-```
-
-## Usage Examples
-
-### Initial Setup
+To download approximately 200 samples for each malware family:
 
 ```bash
-# Initialize directories
-python script.py --init
+python download_malware_samples.py
 ```
 
-### Creating Training Images
+### Command-line Options
 
+- `--samples N`: Download N samples per family (default: 200)
+- `--resume`: Resume download from previous progress
+- `--mb-api-key KEY`: Use a custom MalwareBazaar API key
+- `--ha-api-key KEY`: Use a custom Hybrid Analysis API key
+- `--family NAME`: Download samples for a specific family only
+- `--no-hybrid`: Disable Hybrid Analysis API
+- `--no-synthetic`: Disable synthetic sample generation
+
+### Examples
+
+Download 100 samples per family:
 ```bash
-# Create grayscale images for benign samples
-python script.py --create-images --label benign
-
-# Create grayscale images for malicious samples
-python script.py --create-images --label malicious1
+python download_malware_samples.py --samples 100
 ```
 
-### Training and Classification
-
+Download only ELF Miner samples:
 ```bash
-# Train CNN model
-python script.py --train-cnn --epochs 15
-
-# Classify using CNN
-python script.py --classify-cnn
-
-# Classify using static analysis
-python script.py --classify-static
-
-# Classify using combined approach
-python script.py --classify-combined
+python download_malware_samples.py --family elf_miner
 ```
 
-### Clustering
-
+Resume a previously interrupted download:
 ```bash
-# Perform K-means clustering
-python script.py --cluster --kmeans --n-clusters 5
-
-# Perform DBSCAN clustering
-python script.py --cluster --dbscan
+python download_malware_samples.py --resume
 ```
 
-### YARA Rule Generation
-
+Use a custom Hybrid Analysis API key:
 ```bash
-# Generate YARA rules based on clustering results
-python script.py --cluster --kmeans --generate-yara
+python download_malware_samples.py --ha-api-key YOUR_API_KEY
 ```
 
-### Complete Analysis Pipeline
-
+Download without generating synthetic samples:
 ```bash
-# Run the complete analysis pipeline
-python script.py --init --classify-static --cluster --kmeans --dbscan --generate-yara
+python download_malware_samples.py --no-synthetic
 ```
 
-## Output Files
+## API Keys
 
-The script generates various output files in the `results/` directory:
+- The script includes a default MalwareBazaar API key
+- For Hybrid Analysis, the script includes both an API key and secret
+- You can provide your own Hybrid Analysis API key using the `--ha-api-key` option or by editing the script
 
-- `cnn_classification.csv`: Results from CNN-based classification
-- `static_classification.csv`: Results from static analysis classification
-- `combined_classification.csv`: Results from combined classification approach
-- `kmeans_clustering.csv`: Results from K-means clustering
-- `dbscan_clustering.csv`: Results from DBSCAN clustering
+## Output Structure
 
-YARA rules are generated in the `yara_rules/` directory.
+The script creates the following directory structure:
 
-## Notes
+```
+finalengagement/
+└── training_data/
+    └── malicious/
+        ├── elf_miner/
+        │   ├── [hash1].elf
+        │   ├── [hash2].elf
+        │   └── synthetic/
+        │       ├── [synth_hash1].elf
+        │       └── [synth_hash2].elf
+        ├── elf_berbew/
+        ├── exe_loader/
+        └── exe_dacic/
+```
 
-- For VirusTotal API integration, you need to provide your API key using the `--vt-api-key` parameter
-- The script handles both PE (Windows) and ELF (Linux) executable formats
-- For optimal results, train the CNN model with a balanced dataset of labeled samples
+## Progress Tracking
+
+The script creates JSON files to track progress:
+- `elf_miner_progress.json`
+- `elf_berbew_progress.json`
+- `exe_loader_progress.json`
+- `exe_dacic_progress.json`
+
+These files allow resuming downloads if the script is interrupted.

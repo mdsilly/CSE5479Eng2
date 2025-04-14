@@ -10,6 +10,8 @@ from collections import Counter
 import hashlib
 import math
 from PIL import Image
+import cnn
+import image
 from sklearn.preprocessing import normalize
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans, DBSCAN
@@ -53,14 +55,18 @@ from elftools.elf.elffile import ELFFile
 import requests
 # Directories
 DIR = "./dataset"
+TRAINING_DIR = "./training_data"
 IMG_TRAIN_DIR = "./images/train"
-IMG_VAL_DIR = "./images/eng_final"
+IMG_VAL_DIR = "./images/eng_final_val"
 IMG_SIZE = 128
 BATCH_SIZE = 16
 
 # Mapping labels
 LABELS = {"benign": 0, "malicious1": 1, "malicious2": 2, "malicious3": 3, "malicious4": 4}
 INV_LABELS = {v: k for k, v in LABELS.items()}
+
+BINARY_LABELS = {"benign": 0, 'malicious': 1}
+INV_BINARY_LABELS = {v: k for k, v in BINARY_LABELS.items()}
 
 # VirusTotal API key - replace with your own if available
 VIRUSTOTAL_API_KEY = "4bec2a8a6760888abfa7028993553434eabcbd6618ba9042142e962db9be1905"
@@ -118,7 +124,7 @@ def calculate_file_hash(file_path):
 # FEATURE EXTRACTION
 #######################
 
-def create_greyscale_image(file_path, label=None, file_name=None, train=True):
+def create_greyscale_image(file_path, label=None, file_name=None, train=True, binary='benign'):
     """Convert file content to a 128x128 grayscale image using Pillow"""
     # Check if the file is a ZIP file
     # is_zip = file_path.endswith('.zip')
@@ -138,13 +144,10 @@ def create_greyscale_image(file_path, label=None, file_name=None, train=True):
     img = Image.fromarray(img_array, mode='L')
     
     # Save the image if needed
-    print(img)
     if file_name:
-        print('test1')
         if train and label:
             img.save(os.path.join(IMG_TRAIN_DIR, label, file_name[:9] + '.jpg'))
         elif not train:
-            print('test2')
             img.save(os.path.join(IMG_VAL_DIR, file_name[:9] + '.jpg'))
     
     return np.array(img)
@@ -1693,7 +1696,9 @@ def main():
     
     # Classification options
     parser.add_argument("--train-cnn", action="store_true", help="Train CNN model")
-    parser.add_argument("--epochs", type=int, default=10, help="Number of epochs for CNN training")
+    parser.add_argument("--train-cnnb", action="store_true", help="Train CNN model binary")
+    parser.add_argument("--epochs", type=int, default=7, help="Number of epochs for CNN training")
+    parser.add_argument("--samples-per-class", type=int, default=50, help="Number of samples per class for CNN training")
     parser.add_argument("--classify-cnn", action="store_true", help="Classify samples using CNN")
     parser.add_argument("--classify-static", action="store_true", help="Classify samples using static analysis")
     parser.add_argument("--classify-combined", action="store_true", help="Classify samples using combined approach")
@@ -1749,34 +1754,57 @@ def main():
     
     # Create grayscale images if requested
     if args.create_images:
-        if not args.label:
-            print("Error: --label is required with --create-images")
-            return
+        #if not args.label:
+        #    print("Error: --label is required with --create-images")
+        #    return
         
-        print(f"Creating grayscale images with label '{args.label}'...")
-        for file in os.listdir(DIR):
-            file_path = os.path.join(DIR, file)
-            create_greyscale_image(file_path, label=args.label, file_name=file, train=False)
+        print(f"Creating grayscale images with label..")
+
+        for binary_class in os.listdir(TRAINING_DIR):
+                path = os.path.join(TRAINING_DIR, binary_class)
+                print(path)
+                if(binary_class == 'benign'):
+                    for file in os.listdir(path):
+                        file_path = os.path.join(path, file)    
+                        create_greyscale_image(file_path, label='benign', file_name=file, train=True)
+                else: # malicious
+                    for family in os.listdir(path):
+                        if family.endswith('.json'):
+                            continue
+                        os.makedirs(IMG_TRAIN_DIR + '/malicious/' + family, exist_ok = True)
+                        family_path = os.path.join(path, family)
+                        for file in os.listdir(family_path):
+                            file_path = os.path.join(family_path, file)
+                            if file == 'synthetic':
+                                for synthetic_file in os.listdir(file_path):
+                                    synthetic_file_path = os.path.join(file_path, synthetic_file)
+                                    create_greyscale_image(synthetic_file_path, label='malicious/' + family, file_name=synthetic_file, train=True)
+                            else:   
+                                create_greyscale_image(file_path, label='malicious/' + family, file_name=file, train=True)
+
         
         print("Grayscale images created.")
     
     # Train CNN model if requested
+    model = None
     if args.train_cnn:
-        train_cnn_model(epochs=args.epochs)
+        model = cnn.train_cnn_model(epochs=args.epochs, samples_per_class=args.samples_per_class, binary=False)
+    if args.train_cnnb:
+        model = cnn.train_cnn_model(epochs=args.epochs, samples_per_class=args.samples_per_class, binary=True)
     
     # Classification
     cnn_results = None
     static_results = None
     
     if args.classify_cnn:
-        cnn_results = classify_samples_cnn()
+        cnn_results = cnn.classify_samples_cnn(model)
     
     if args.classify_static:
         static_results = classify_samples_static()
     
     if args.classify_combined:
         if cnn_results is None:
-            cnn_results = classify_samples_cnn()
+            cnn_results = cnn.classify_samples_cnn(model)
         
         if static_results is None:
             static_results = classify_samples_static()

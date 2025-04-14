@@ -58,11 +58,12 @@ DIR = "./dataset"
 TRAINING_DIR = "./training_data"
 IMG_TRAIN_DIR = "./images/train"
 IMG_VAL_DIR = "./images/eng_final_val"
+VAL_DIR = './eng_data_final'
 IMG_SIZE = 128
 BATCH_SIZE = 16
 
-# Mapping labels
-LABELS = {"benign": 0, "malicious1": 1, "malicious2": 2, "malicious3": 3, "malicious4": 4}
+# Mapping labels for final engagement
+LABELS = {"benign": 0, "elf_miner": 1, "elf_berbew": 2, "exe_loader": 3, "exe_didac": 4}
 INV_LABELS = {v: k for k, v in LABELS.items()}
 
 BINARY_LABELS = {"benign": 0, 'malicious': 1}
@@ -1691,7 +1692,8 @@ def main():
     parser.add_argument("--init", action="store_true", help="Initialize directories")
     
     # Dataset processing options
-    parser.add_argument("--create-images", action="store_true", help="Create grayscale images from binaries")
+    parser.add_argument("--create-trainimages", action="store_true", help="Create grayscale images from binaries for training")
+    parser.add_argument("--create-valimages", action="store_true", help="Create grayscale images from validation binaries")
     parser.add_argument("--label", type=str, help="Label for training images (required with --create-images)")
     
     # Classification options
@@ -1753,7 +1755,7 @@ def main():
         print("Directories initialized.")
     
     # Create grayscale images if requested
-    if args.create_images:
+    if args.create_trainimages:
         #if not args.label:
         #    print("Error: --label is required with --create-images")
         #    return
@@ -1784,6 +1786,10 @@ def main():
 
         
         print("Grayscale images created.")
+    if args.create_valimages:
+        for binary in os.listdir(VAL_DIR):
+            file_path =  os.path.join(VAL_DIR, binary)
+            create_greyscale_image(file_path, file_name=binary, train=False)
     
     # Train CNN model if requested
     model = None
@@ -1797,7 +1803,11 @@ def main():
     static_results = None
     
     if args.classify_cnn:
-        cnn_results = cnn.classify_samples_cnn(model)
+        if model:
+            cnn_results = cnn.classify_samples_cnn(model)
+        else: # use a base model
+            print('Classifying using binary model')
+            cnn_results = cnn.classify_samples_cnn('./models/malware_binary.h5', binary = True)
     
     if args.classify_static:
         static_results = classify_samples_static()

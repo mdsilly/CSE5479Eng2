@@ -3,6 +3,7 @@ import os
 import numpy as np
 import pandas as pd
 import image
+from PIL import Image
 import script
 import tensorflow as tf
 from tensorflow import keras
@@ -11,7 +12,7 @@ from keras import layers
 def train_cnn_model(epochs=5, samples_per_class=50, binary = True):
     """Train CNN model on image data"""
     print("Preparing image dataset...")
-    augmented_training_dataset, val_dataset = image.prepare_image_dataset(samples_per_class=samples_per_class)
+    augmented_training_dataset, val_dataset = image.prepare_image_dataset(samples_per_class=samples_per_class, binary=binary, label_mode='binary' if binary else 'categorical')
 
     print("Building and training CNN model...")
     model = build_cnn_model_binary() if binary else build_cnn_model()
@@ -41,15 +42,21 @@ def classify_samples_cnn(model=None, binary = True):
         except:
             print("No model found. Please train the model first.")
             return None
+    else:
+        model = keras.models.load_model(model)
+    print(model)
 
     results = []
     for file in os.listdir(script.IMG_VAL_DIR):
-        file_path = os.path.join(script.IMG_VAL_DIR, file)
-        greyscale_img = script.create_greyscale_image(file_path, file_name=file, train=False)
+        greyscale_img_path = os.path.join(script.IMG_VAL_DIR, file)
+        greyscale_img = np.array(Image.open(greyscale_img_path))
+        #greyscale_img = script.create_greyscale_image(file_path, file_name=file, train=False)
         img_array = keras.utils.img_to_array(greyscale_img)
         img_array = img_array.reshape(1, script.IMG_SIZE, script.IMG_SIZE, 1)
 
         pred_probs = model.predict(img_array)
+        print('predicted probs: ')
+        print(pred_probs)
         pred_label = np.argmax(pred_probs)
         confidence = np.max(pred_probs)
 
@@ -109,7 +116,7 @@ def build_cnn_model_binary():
         layers.Flatten(),
         layers.Dense(128, activation='relu'),
         layers.Dropout(0.35),  # Increased dropout to prevent overfitting
-        layers.Dense(len(script.BINARY_LABELS), activation='softmax')
+        layers.Dense(1, activation='sigmoid')
     ])
-    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
     return model

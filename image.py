@@ -89,7 +89,7 @@ def sample_images_from_classes(source_dir, samples_per_class):
     
     return temp_dir
 
-def prepare_image_dataset(samples_per_class=50):
+def prepare_image_dataset(samples_per_class=50, binary=True, label_mode=None):
     """Prepare image dataset for CNN training"""
     # Sample images from each class if samples_per_class is specified
     if samples_per_class is not None and samples_per_class > 0:
@@ -100,6 +100,10 @@ def prepare_image_dataset(samples_per_class=50):
         # Use all available images
         source_dir = script.IMG_TRAIN_DIR
     
+    # Use provided label_mode or default to binary/categorical based on binary parameter
+    if label_mode is None:
+        label_mode = 'binary' if binary else 'categorical'
+    
     # Create image dataset from directory
     training_dataset = keras.utils.image_dataset_from_directory(
         source_dir,
@@ -108,7 +112,7 @@ def prepare_image_dataset(samples_per_class=50):
         seed=42,
         image_size=(script.IMG_SIZE, script.IMG_SIZE),
         batch_size=script.BATCH_SIZE,
-        label_mode='categorical',
+        label_mode=label_mode,
         color_mode='grayscale'
     )
 
@@ -120,7 +124,7 @@ def prepare_image_dataset(samples_per_class=50):
         seed=42,
         image_size=(script.IMG_SIZE, script.IMG_SIZE),
         batch_size=script.BATCH_SIZE,
-        label_mode='categorical',
+        label_mode=label_mode,
         color_mode='grayscale'
     )
     
